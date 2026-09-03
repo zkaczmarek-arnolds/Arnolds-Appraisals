@@ -87,82 +87,146 @@ function buildPdf(){
   }
   const { jsPDF } = window.jspdf;
   const doc = new jsPDF({unit:"pt",format:"letter"});
-  const margin=42, pageW=612, pageH=792, contentW=pageW-margin*2;
-  let y=48;
+  const pageW=612, pageH=792, margin=28, gap=16;
+  const colW=(pageW-margin*2-gap)/2;
+  const leftX=margin, rightX=margin+colW+gap;
+  let x=leftX, y=50, col=0;
 
-  function ensure(h=18){
-    if(y+h>pageH-46){ doc.addPage(); y=48; }
+  // Header
+  doc.setFont("helvetica","bold");
+  doc.setFontSize(13);
+  const titleLines=doc.splitTextToSize("Arnold Companies - "+current.title, pageW-margin*2);
+  doc.text(titleLines, margin, 28);
+  y = 42 + (titleLines.length-1)*12;
+
+  function nextColumn(){
+    if(col===0){ col=1; x=rightX; y=50; return true; }
+    return false;
   }
-  function title(t){
-    ensure(32); doc.setFont("helvetica","bold"); doc.setFontSize(15);
-    doc.text(t,margin,y); y+=22;
+
+  function ensure(h){
+    if(y+h > pageH-34){
+      if(!nextColumn()){
+        // If the one-page summary is extremely full, compress remaining content
+        // rather than creating a second page.
+        return false;
+      }
+    }
+    return true;
   }
+
   function section(t){
-    ensure(28); y+=5; doc.setFont("helvetica","bold"); doc.setFontSize(11);
-    doc.text(t,margin,y); y+=8;
-    doc.setLineWidth(.5); doc.line(margin,y,pageW-margin,y); y+=14;
-  }
-  function row(label,value){
-    if(!value) return;
-    doc.setFontSize(9);
+    const h=18;
+    if(!ensure(h)) return false;
     doc.setFont("helvetica","bold");
-    const lw=130;
-    const valLines=doc.splitTextToSize(String(value),contentW-lw);
-    const h=Math.max(14,valLines.length*11+2); ensure(h);
-    doc.text(label+":",margin,y);
-    doc.setFont("helvetica","normal");
-    doc.text(valLines,margin+lw,y);
-    y+=h;
-  }
-  function wrapped(text,bullet=false){
-    if(!text) return;
-    doc.setFont("helvetica","normal"); doc.setFontSize(8.5);
-    const prefix=bullet?"• ":"";
-    const lines=doc.splitTextToSize(prefix+String(text),contentW);
-    const h=lines.length*10+4; ensure(h);
-    doc.text(lines,margin,y); y+=h;
+    doc.setFontSize(8.5);
+    doc.text(t.toUpperCase(),x,y);
+    y+=5;
+    doc.setLineWidth(.35);
+    doc.line(x,y,x+colW,y);
+    y+=9;
+    return true;
   }
 
-  title("Arnold Companies - "+current.title);
+  function row(label,value){
+    if(value===undefined || value===null || String(value).trim()==="") return true;
+    const val=String(value).trim();
+    doc.setFontSize(7.1);
+    doc.setFont("helvetica","bold");
+    const labelW=78;
+    const lines=doc.splitTextToSize(val,colW-labelW);
+    const h=Math.max(9,lines.length*8.1);
+    if(!ensure(h)) return false;
+    doc.text(label+":",x,y);
+    doc.setFont("helvetica","normal");
+    doc.text(lines,x+labelW,y);
+    y+=h;
+    return true;
+  }
+
+  function bullet(text){
+    if(!text) return true;
+    doc.setFont("helvetica","normal");
+    doc.setFontSize(6.8);
+    const lines=doc.splitTextToSize("• "+String(text),colW);
+    const h=lines.length*7.7+1;
+    if(!ensure(h)) return false;
+    doc.text(lines,x,y);
+    y+=h;
+    return true;
+  }
+
+  function currency(value){
+    if(!value) return "";
+    const n=Number(value);
+    return isNaN(n)?value:"$"+n.toLocaleString();
+  }
 
   section("Appraisal Information");
-  row("Date",v("date")); row("Stock Number",v("stock")); row("Description Code",v("desc"));
-  row("Location",v("location")); row("Unit Traded In On",v("traded")); row("Sales Initials",v("sales"));
-  row("Asking Price",v("asking") ? "$"+Number(v("asking")).toLocaleString() : "");
-  row("Trade Range %",v("trade"));
+  row("Date",v("date"));
+  row("Stock #",v("stock"));
+  row("Desc. Code",v("desc"));
+  row("Location",v("location"));
+  row("Traded In On",v("traded"));
+  row("Sales Initials",v("sales"));
+  row("Asking Price",currency(v("asking")));
+  row("Trade Range",v("trade") ? v("trade")+"%" : "");
 
-  section("Equipment Information");
-  row("Make",v("make")); row("Model",v("model")); row("Size",v("size")); row("Year",v("year"));
-  row("Full Serial Number",v("serial")); row("Purchased",radio("purchased"));
+  section("Equipment");
+  row("Make",v("make"));
+  row("Model",v("model"));
+  row("Size",v("size"));
+  row("Year",v("year"));
+  row("Serial #",v("serial"));
+  row("Purchased",radio("purchased"));
 
-  section("Condition & Reconditioning");
-  row("Owner's Full Name",v("owner")); row("Previous Owner Phone",v("phone")); row("OK to Contact",radio("contact"));
-  row("General Appearance",v("general")); row("Paint Appearance",v("paint")); row("Mechanical Condition",v("mechanical"));
-  row("Engine / Unit Hours",v("hours")); row("Date Hours Were Taken",v("hoursdate"));
-  row("Reconditioning Allowance",v("reconallow") ? "$"+Number(v("reconallow")).toLocaleString() : "");
-  row("Reconditioning Plan",v("reconplan"));
+  section("Condition / Reconditioning");
+  row("Owner",v("owner"));
+  row("Prev. Owner Phone",v("phone"));
+  row("OK to Contact",radio("contact"));
+  row("General",v("general"));
+  row("Paint",v("paint"));
+  row("Mechanical",v("mechanical"));
+  row("Hours",v("hours"));
+  row("Hours Date",v("hoursdate"));
+  row("Recon Allow.",currency(v("reconallow")));
+  row("Recon Plan",v("reconplan"));
 
   const opts=[];
   current.rows.forEach((r,j)=>{
     const selected=Array.from(document.querySelectorAll(`[data-row="${j}"]:checked`)).map(x=>x.value);
     let note=(document.querySelector(`[data-note="${j}"]`)||{}).value||""; note=note.trim();
-    if(selected.length||note) opts.push(r.label+": "+selected.join(", ")+(note?(selected.length?" — ":"")+note:""));
+    if(selected.length||note){
+      let text=r.label+": ";
+      if(selected.length) text+=selected.join(", ");
+      if(note) text+=(selected.length?" — ":"")+note;
+      opts.push(text);
+    }
   });
-  if(opts.length){ section("Equipment-Specific Options"); opts.forEach(x=>wrapped(x,true)); }
 
-  section("Descriptions & Notes");
-  row("Internal Description / Specs",v("internal"));
-  row("Additional External Specs",v("external"));
-  row("Base and Options",v("base"));
-  row("Memo",v("memo"));
-
-  // footer on each page
-  const pages=doc.getNumberOfPages();
-  for(let p=1;p<=pages;p++){
-    doc.setPage(p); doc.setFontSize(7.5); doc.setFont("helvetica","normal");
-    doc.text("Arnold Companies - Equipment Appraisal",margin,pageH-22);
-    doc.text("Page "+p+" of "+pages,pageW-margin,pageH-22,{align:"right"});
+  if(opts.length){
+    section("Selected Options / Specs");
+    opts.forEach(x=>bullet(x));
   }
+
+  const notes=[
+    ["Internal Specs",v("internal")],
+    ["External Specs",v("external")],
+    ["Base / Options",v("base")],
+    ["Memo",v("memo")]
+  ].filter(x=>x[1]);
+
+  if(notes.length){
+    section("Descriptions / Notes");
+    notes.forEach(([k,val])=>row(k,val));
+  }
+
+  // Footer
+  doc.setFont("helvetica","normal");
+  doc.setFontSize(6.5);
+  doc.text("Arnold Companies - Equipment Appraisal",margin,pageH-16);
+  doc.text("One-page appraisal summary",pageW-margin,pageH-16,{align:"right"});
+
   return doc;
 }
 
