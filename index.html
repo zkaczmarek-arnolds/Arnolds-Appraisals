@@ -59,6 +59,18 @@ button.action.light:hover{border-color:var(--arnolds-red)!important}
   .brandbar .brandtitle{font-size:17px}
 }
 
+
+.specinputs{display:flex;flex-wrap:wrap;gap:10px;margin-top:8px}
+.specinput{display:flex;align-items:center;gap:8px;border:1px solid #d2d6dc;border-radius:10px;padding:8px 10px;background:#fff}
+.specinput span{font-size:14px;font-weight:600;white-space:nowrap}
+.specinput input{width:110px;min-width:90px;padding:8px;border:1px solid #c9c9c9;border-radius:7px;font:inherit}
+.specinput input[type=number]{width:82px}
+@media(max-width:700px){
+  .specinputs{display:grid;grid-template-columns:1fr 1fr}
+  .specinput{justify-content:space-between}
+  .specinput input{width:100%;max-width:120px}
+}
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 </head>
@@ -96,8 +108,102 @@ function field(id,label,type="text",full=false){
   }
   return `<div class="${full?'full':''}"><label>${label}</label>${control}</div>`;
 }
+
+function inputDefinitions(r){
+  const label=(r.label||"").toLowerCase();
+  const opts=r.options||[];
+  const defs=[];
+
+  // Generic front/rear tire or track SIZE rows were blank-entry fields on the paper forms.
+  if(/^(front|rear) tire\/track size$/.test(label)){
+    const side=label.startsWith("front")?"Front":"Rear";
+    defs.push({label:side+" Tire/Track Size",type:"text",key:"size"});
+    if(opts.some(o=>/duals/i.test(o))) defs.push({label:side+" Duals %",type:"number",key:"duals",min:0,max:100});
+    if(opts.some(o=>/triples/i.test(o))) defs.push({label:side+" Triples %",type:"number",key:"triples",min:0,max:100});
+    return defs;
+  }
+
+  // Tread / wear percentage rows should be entered as percentages, not checked.
+  if(/tread\s*%|track\s*%/.test(label) || opts.some(o=>/tread\s*%/i.test(o))){
+    // Avoid converting rows that are clearly lists of real tire/track sizes.
+    const realSizeChoices=opts.filter(o=>/\d+[\/x.-]\d+|R\d+|tracks?$/i.test(o)).length;
+    if(realSizeChoices < 2){
+      const pctOpts=opts.filter(o=>/%|tread/i.test(o));
+      if(pctOpts.length){
+        pctOpts.forEach((o,k)=>{
+          let clean=o.replace(/^%+\s*/,"").replace(/\s*%+$/,"").replace(/tread/ig,"").trim();
+          if(!clean) clean=(label.includes("front")?"Front":label.includes("rear")?"Rear":"Wear");
+          defs.push({label:clean+" %",type:"number",key:"pct"+k,min:0,max:100});
+        });
+      }else{
+        defs.push({label:r.label,type:"number",key:"pct",min:0,max:100});
+      }
+      return defs;
+    }
+  }
+
+  // Rows like Tire BrandOther contain Front Tread % / Rear Tread % entry fields.
+  if(opts.length && opts.every(o=>/tread\s*%/i.test(o))){
+    opts.forEach((o,k)=>defs.push({
+      label:o.replace(/\s*%/,"").trim()+" %",
+      type:"number",key:"pct"+k,min:0,max:100
+    }));
+    return defs;
+  }
+
+  // Transmission: keep transmission types selectable, but gears are entered numerically.
+  if(label==="transmission" && opts.some(o=>/forward gears|reverse gears/i.test(o))){
+    opts.forEach((o,k)=>{
+      if(/forward gears/i.test(o)) defs.push({label:"Forward Gears",type:"number",key:"fwd",min:0});
+      else if(/reverse gears/i.test(o)) defs.push({label:"Reverse Gears",type:"number",key:"rev",min:0});
+      else if(/^ranges?$/i.test(o.trim())) defs.push({label:"Ranges",type:"number",key:"ranges",min:0});
+    });
+    return defs;
+  }
+
+  // Tire Appraisal: number of tires and tread % are both numeric entries.
+  if(label==="number of tires"){
+    defs.push({label:"Number of Tires",type:"number",key:"count",min:0});
+    defs.push({label:"Tread %",type:"number",key:"tread",min:0,max:100});
+    return defs;
+  }
+
+  // A standalone Track % row is a numeric wear field.
+  if(label==="track %"){
+    defs.push({label:"Track %",type:"number",key:"trackpct",min:0,max:100});
+    return defs;
+  }
+
+  return defs;
+}
+
+function checkboxOptions(r){
+  const label=(r.label||"").toLowerCase();
+  let opts=[...(r.options||[])];
+
+  // PTO rows: always provide a None choice when PTO selections are applicable.
+  // Do not duplicate it if the source row already contains None / No PTO.
+  if(/\bpto\b/.test(label) && opts.length && !opts.some(o=>/^(none|no pto)$/i.test(String(o).trim()))){
+    opts.push("None");
+  }
+  if(/^(front|rear) tire\/track size$/.test(label)) return [];
+  if(label==="number of tires" || label==="track %") return [];
+  if(label==="transmission" && opts.some(o=>/forward gears|reverse gears/i.test(o))){
+    return opts.filter(o=>!/forward gears|reverse gears/i.test(o) && !/^ranges?$/i.test(o.trim()));
+  }
+  if(opts.length && opts.every(o=>/tread\s*%/i.test(o))) return [];
+  if(/tread\s*%/.test(label) && !opts.some(o=>/\d+[\/x.-]\d+|R\d+|tracks?$/i.test(o))) return [];
+  return opts;
+}
+
 function openForm(i){current=FORMS[i];home.style.display="none";formView.style.display="block";
- let specs=current.rows.map((r,j)=>`<div class="specrow"><div class="source"><b>${esc(r.label)}</b></div><div class="choices">${r.options.map((o,k)=>`<label class="chip"><input type="checkbox" data-row="${j}" data-option="${k}" value="${esc(o)}"> ${esc(o)}</label>`).join("")}</div><input data-note="${j}" placeholder="Other / notes (optional)" style="margin-top:8px"></div>`).join("");
+ let specs=current.rows.map((r,j)=>{
+   const inputs=inputDefinitions(r);
+   const checks=checkboxOptions(r);
+   const inputHtml=inputs.length?`<div class="specinputs">${inputs.map((d,k)=>`<label class="specinput"><span>${esc(d.label)}</span><input class="spec-input" data-row="${j}" data-input="${esc(d.key)}" data-input-label="${esc(d.label)}" type="${d.type}" ${d.min!==undefined?`min="${d.min}"`:""} ${d.max!==undefined?`max="${d.max}"`:""} inputmode="${d.type==="number"?"numeric":"text"}"></label>`).join("")}</div>`:"";
+   const checkHtml=checks.length?`<div class="choices">${checks.map((o,k)=>`<label class="chip"><input type="checkbox" data-row="${j}" data-option="${k}" value="${esc(o)}"> ${esc(o)}</label>`).join("")}</div>`:"";
+   return `<div class="specrow"><div class="source"><b>${esc(r.label)}</b></div>${inputHtml}${checkHtml}<input data-note="${j}" placeholder="Other / notes (optional)" style="margin-top:8px"></div>`;
+ }).join("");
  formView.innerHTML=`<button class="back" onclick="goHome()">← All Appraisals</button>
  <div class="top"><h1>${esc(current.title)}</h1><div class="muted">${esc(current.category)} • Based on ${esc(current.file)}</div></div>
  <div class="card"><h2>Appraisal Information</h2><div class="fields">
@@ -105,7 +211,7 @@ function openForm(i){current=FORMS[i];home.style.display="none";formView.style.d
  ${field("traded","Unit Traded In On")}${field("sales","Sales Initials")}${field("asking","Asking Price $","number")}${field("trade","Trade Range %","number")}
  </div></div>
  <div class="card"><h2>Equipment Information</h2><div class="fields">
- ${field("make","Make")}${field("model","Model")}${field("size","Size")}${field("year","Year","number")}${field("serial","Full Serial Number","text",true)}
+ ${field("make","Make")}${field("model","Model")}${field("year","Year","number")}${field("serial","Full Serial Number","text",true)}
  </div><div class="choices" style="margin-top:12px"><label class="chip"><input type="radio" name="purchased" value="New">New</label><label class="chip"><input type="radio" name="purchased" value="Used">Used</label></div></div>
  <div class="card"><h2>Condition & Reconditioning</h2><div class="fields">
  ${field("owner","Owner's Full Name")}${field("phone","Previous Owner Phone","tel")}${field("general","General Appearance")}${field("paint","Paint Appearance")}${field("mechanical","Mechanical Condition")}${field("hours","Engine / Unit Hours","number")}
@@ -127,7 +233,13 @@ function summary(){let s=`ARNOLD COMPANIES - ${current.title.toUpperCase()}\n\n`
  s+=line("Date",v("date"))+line("Stock Number",v("stock"))+line("Description Code",v("desc"))+line("Location",v("location"))+line("Unit Traded In On",v("traded"))+line("Sales Initials",v("sales"))+line("Asking Price",v("asking"))+line("Trade Range %",v("trade"));
  s+="\nEQUIPMENT\n"+line("Make",v("make"))+line("Model",v("model"))+line("Size",v("size"))+line("Year",v("year"))+line("Serial Number",v("serial"))+line("Purchased",radio("purchased"));
  s+="\nCONDITION\n"+line("Owner",v("owner"))+line("Previous Owner Phone",v("phone"))+line("OK to Contact",radio("contact"))+line("General Appearance",v("general"))+line("Paint Appearance",v("paint"))+line("Mechanical Condition",v("mechanical"))+line("Hours",v("hours"))+line("Date Hours Taken",v("hoursdate"))+line("Recon Allowance",v("reconallow"))+line("Recon Plan",v("reconplan"));
- let opts=[];current.rows.forEach((r,j)=>{let selected=Array.from(document.querySelectorAll(`[data-row="${j}"]:checked`)).map(x=>x.value);let n=(document.querySelector(`[data-note="${j}"]`)||{}).value||"";n=n.trim();if(selected.length||n)opts.push(r.label+": "+selected.join(", ")+(n?(selected.length?" — ":"")+n:""));});if(opts.length)s+="\nOPTIONS / SPECS\n"+opts.map(x=>"• "+x).join("\n")+"\n";
+ let opts=[];current.rows.forEach((r,j)=>{
+   let selected=Array.from(document.querySelectorAll(`input[type="checkbox"][data-row="${j}"]:checked`)).map(x=>x.value);
+   let entered=Array.from(document.querySelectorAll(`.spec-input[data-row="${j}"]`)).filter(x=>x.value.trim()!=="").map(x=>x.dataset.inputLabel+": "+x.value);
+   let n=(document.querySelector(`[data-note="${j}"]`)||{}).value||"";n=n.trim();
+   let parts=[...selected,...entered]; if(n)parts.push("Notes: "+n);
+   if(parts.length)opts.push(r.label+": "+parts.join(", "));
+ });if(opts.length)s+="\nOPTIONS / SPECS\n"+opts.map(x=>"• "+x).join("\n")+"\n";
  s+="\nNOTES\n"+line("Internal Description / Specs",v("internal"))+line("External Specs",v("external"))+line("Base and Options",v("base"))+line("Memo",v("memo"));return s.trim()}
 function pdfSafeName(){
   let parts=[current.title, v("make"), v("model"), v("stock") ? "Stock-"+v("stock") : ""].filter(Boolean);
@@ -195,7 +307,7 @@ function buildPdf(){
   field("Date:",v("date"),x1,y,iw); field("Stock Number:",v("stock"),x2,y,iw); field("Desc. Code:",v("desc"),x3,y,iw); y+=18;
   field("Location:",v("location"),x1,y,iw); field("Sales Initials:",v("sales"),x2,y,iw); field("Asking Price:",money(v("asking")),x3,y,iw); y+=18;
   field("Make:",v("make"),x1,y,iw); field("Model:",v("model"),x2,y,iw); field("Year:",v("year"),x3,y,iw); y+=18;
-  field("Size:",v("size"),x1,y,iw); field("Full Serial Number:",v("serial"),x2,y,cw*2+gap-7); y+=18;
+  field("Full Serial Number:",v("serial"),x1,y,cw*2+gap-7); y+=18;
   field("Purchased:",radio("purchased"),x1,y,iw); field("Trade Range:",v("trade")?v("trade")+"%":"",x2,y,iw); field("Unit Traded In On:",v("traded"),x3,y,iw);
 
   top=168; y=sectionBox("Ownership / Condition / Reconditioning",top,126);
@@ -207,9 +319,12 @@ function buildPdf(){
 
   const opts=[];
   current.rows.forEach((r,j)=>{
-    const selected=Array.from(document.querySelectorAll(`[data-row="${j}"]:checked`)).map(x=>x.value);
+    const selected=Array.from(document.querySelectorAll(`input[type="checkbox"][data-row="${j}"]:checked`)).map(x=>x.value);
+    const entered=Array.from(document.querySelectorAll(`.spec-input[data-row="${j}"]`))
+      .filter(x=>x.value.trim()!=="")
+      .map(x=>x.dataset.inputLabel+": "+x.value);
     let note=(document.querySelector(`[data-note="${j}"]`)||{}).value||""; note=note.trim();
-    if(selected.length||note)opts.push({label:r.label,selected,note});
+    if(selected.length||entered.length||note)opts.push({label:r.label,selected,entered,note});
   });
 
   top=302; const notesTop=654,optionHeight=notesTop-top-8;
@@ -239,6 +354,7 @@ function buildPdf(){
       doc.setFontSize(fs);doc.setFont("helvetica","bold");
       total+=doc.splitTextToSize(r.label+":",colW).length;
       const items=r.selected.map(t=>({text:t,checked:true}));
+      (r.entered||[]).forEach(t=>items.push({text:t,checked:false}));
       if(r.note)items.push({text:"Notes: "+r.note,checked:false});
       total+=completedPack(items,fs).length+1;
     });
@@ -261,6 +377,7 @@ function buildPdf(){
       doc.setFontSize(fs);doc.setFont("helvetica","bold");
       const labs=doc.splitTextToSize(r.label+":",colW);
       const items=r.selected.map(t=>({text:t,checked:true}));
+      (r.entered||[]).forEach(t=>items.push({text:t,checked:false}));
       if(r.note)items.push({text:"Notes: "+r.note,checked:false});
       const lines=completedPack(items,fs);
       const need=labs.length*lead+lines.length*lead+7;
@@ -372,7 +489,7 @@ function buildBlankPdf(){
   lineField("Date:",x1,y,innerW); lineField("Stock Number:",x2,y,innerW); lineField("Desc. Code:",x3,y,innerW); y+=18;
   lineField("Location:",x1,y,innerW); lineField("Sales Initials:",x2,y,innerW); lineField("Asking Price $:",x3,y,innerW); y+=18;
   lineField("Make:",x1,y,innerW); lineField("Model:",x2,y,innerW); lineField("Year:",x3,y,innerW); y+=18;
-  lineField("Size:",x1,y,innerW); lineField("Full Serial Number:",x2,y,cw*2+gap-7); y+=18;
+  lineField("Full Serial Number:",x1,y,cw*2+gap-7); y+=18;
 
   doc.setFont("helvetica","bold"); doc.setFontSize(6.8); doc.text("Purchased:",x1,y);
   doc.setFont("helvetica","normal");
@@ -410,20 +527,28 @@ function buildBlankPdf(){
   const cols=3,cgap=10,colW=(fullW-14-cgap*2)/3;
   let col=0,ox=m+7,oy=y;
 
-  function blankPack(options,fs){
+  function blankPack(items,fs){
     doc.setFontSize(fs);
     const lines=[]; let line=[],used=0;
-    options.forEach(opt=>{
-      const box=Math.max(4,fs-.3);
-      const w=box+3+doc.getTextWidth(opt)+9;
+    items.forEach(item=>{
+      const w=item.kind==="input"
+        ? doc.getTextWidth(item.label)+42
+        : Math.max(4,fs-.3)+3+doc.getTextWidth(item.label)+9;
       if(line.length && used+w>colW){
-        lines.push(line); line=[opt]; used=w;
+        lines.push(line); line=[item]; used=w;
       }else{
-        line.push(opt); used+=w;
+        line.push(item); used+=w;
       }
     });
     if(line.length)lines.push(line);
     return lines;
+  }
+
+  function blankItemsForRow(r){
+    const arr=[];
+    inputDefinitions(r).forEach(d=>arr.push({kind:"input",label:d.label}));
+    checkboxOptions(r).forEach(o=>arr.push({kind:"check",label:o}));
+    return arr;
   }
 
   function blankLineCount(fs){
@@ -431,7 +556,7 @@ function buildBlankPdf(){
     current.rows.forEach(r=>{
       doc.setFontSize(fs);doc.setFont("helvetica","bold");
       total+=doc.splitTextToSize(r.label+":",colW).length;
-      total+=blankPack(r.options,fs).length+1;
+      total+=blankPack(blankItemsForRow(r),fs).length+1;
     });
     return total;
   }
@@ -447,7 +572,7 @@ function buildBlankPdf(){
   current.rows.forEach(r=>{
     doc.setFontSize(fs);doc.setFont("helvetica","bold");
     const labelLines=doc.splitTextToSize(r.label+":",colW);
-    const optionLines=blankPack(r.options,fs);
+    const optionLines=blankPack(blankItemsForRow(r),fs);
     const need=labelLines.length*lead+optionLines.length*lead+7;
     if(oy+need>optionBottom&&col<cols-1)nextCol();
 
@@ -457,12 +582,19 @@ function buildBlankPdf(){
 
     optionLines.forEach(arr=>{
       let tx=ox;
-      arr.forEach(opt=>{
-        const box=Math.max(4,fs-.3);
-        doc.rect(tx,oy-box+1,box,box);
-        tx+=box+3;
-        doc.text(opt,tx,oy);
-        tx+=doc.getTextWidth(opt)+9;
+      arr.forEach(item=>{
+        if(item.kind==="input"){
+          doc.text(item.label+":",tx,oy);
+          tx+=doc.getTextWidth(item.label+":")+3;
+          doc.line(tx,oy+1,Math.min(tx+34,ox+colW),oy+1);
+          tx+=43;
+        }else{
+          const box=Math.max(4,fs-.3);
+          doc.rect(tx,oy-box+1,box,box);
+          tx+=box+3;
+          doc.text(item.label,tx,oy);
+          tx+=doc.getTextWidth(item.label)+9;
+        }
       });
       oy+=lead;
     });
