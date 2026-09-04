@@ -18,10 +18,10 @@ h1{font-size:26px;margin:0 0 5px}.muted{color:var(--muted);font-size:14px}
 label{font-size:13px;font-weight:bold;display:block;margin-bottom:5px}input,select,textarea{width:100%;font:inherit;padding:11px;border:1px solid #bfc4cc;border-radius:9px;background:#fff}
 textarea{min-height:80px}.choices{display:flex;flex-wrap:wrap;gap:8px}.chip{display:flex;align-items:flex-start;gap:7px;border:1px solid var(--line);padding:9px;border-radius:9px;font-weight:normal;background:#fafafa}.chip input{width:auto;margin-top:2px}
 .specrow{border-top:1px solid #eee;padding:10px 0}.specrow:first-child{border-top:0}.specrow .source{font-size:13px;margin-bottom:7px}
-.actions{position:sticky;bottom:0;background:rgba(243,244,246,.96);padding:10px 0;display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
+.actions{position:sticky;bottom:0;background:rgba(243,244,246,.96);padding:10px 0;display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
 button.action{padding:12px 8px;border:0;border-radius:9px;font-weight:bold}.dark{background:#111827;color:#fff}.light{background:#fff;border:1px solid var(--line)!important}
 .notice{font-size:12px;color:var(--muted);text-align:center;padding:4px 0 10px}
-@media(max-width:700px){.grid,.fields{grid-template-columns:1fr}.actions{grid-template-columns:1fr 1fr}}
+@media(max-width:700px){.grid,.fields{grid-template-columns:1fr}.actions{grid-template-columns:1fr}}
 @media print{body{background:#fff}.shell{max-width:none;padding:0}.top,.filters,#home,.back,.actions,.notice{display:none!important}.card{border:1px solid #888;border-radius:0;break-inside:avoid}input,textarea,select{border:0;padding:2px 0}.chip{border:0;padding:2px 8px 2px 0}}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
@@ -61,8 +61,8 @@ function openForm(i){current=FORMS[i];home.style.display="none";formView.style.d
  <div class="card"><h2>Descriptions & Notes</h2><div class="fields">
  ${field("internal","Internal Description / Specs","textarea",true)}${field("external","Additional External Specs","textarea",true)}${field("base","Base and Options","textarea",true)}${field("memo","Memo","textarea",true)}
  </div></div>
- <div class="actions"><button class="action dark" onclick="emailPdf()">Email PDF</button><button class="action light" onclick="savePdf()">Save PDF</button></div>
- <div class="notice">On iPhone/iPad, Email PDF opens the Share Sheet with the completed appraisal PDF attached. Choose Mail. Save PDF creates the same completed appraisal as a PDF file.</div>`;
+ <div class="actions"><button class="action dark" onclick="emailPdf()">Email PDF</button><button class="action light" onclick="savePdf()">Save PDF</button><button class="action light" onclick="blankPdf()">Blank Printable PDF</button></div>
+ <div class="notice">Email PDF and Save PDF use the completed appraisal. Blank Printable PDF creates a clean one-page blank appraisal for printing or handwriting.</div>`;
  window.scrollTo(0,0);
 }
 function goHome(){formView.style.display="none";home.style.display="block";current=null;window.scrollTo(0,0)}
@@ -228,6 +228,185 @@ function buildPdf(){
   doc.text("One-page appraisal summary",pageW-margin,pageH-16,{align:"right"});
 
   return doc;
+}
+
+
+function buildBlankPdf(){
+  if(!window.jspdf || !window.jspdf.jsPDF){
+    alert("The PDF library has not finished loading. Please wait a moment and try again.");
+    return null;
+  }
+
+  const { jsPDF } = window.jspdf;
+  const doc = new jsPDF({unit:"pt",format:"letter"});
+  const W=612,H=792,m=24,fullW=W-m*2;
+
+  function sectionBox(title, top, height){
+    doc.setLineWidth(.7);
+    doc.rect(m,top,fullW,height);
+    doc.setFont("helvetica","bold");
+    doc.setFontSize(7.2);
+    doc.text(title.toUpperCase(),m+7,top+11);
+    doc.setLineWidth(.35);
+    doc.line(m,top+16,W-m,top+16);
+    return top+27;
+  }
+
+  function lineField(label,x,y,w){
+    doc.setFont("helvetica","bold");
+    doc.setFontSize(6.8);
+    doc.text(label,x,y);
+    const tw=doc.getTextWidth(label)+4;
+    doc.setLineWidth(.35);
+    doc.line(x+tw,y+1,x+w,y+1);
+  }
+
+  // Title block
+  doc.setFont("helvetica","bold");
+  doc.setFontSize(13);
+  doc.text(doc.splitTextToSize("Arnold Companies - "+current.title, fullW-120),m,23);
+  doc.setFont("helvetica","normal");
+  doc.setFontSize(6.5);
+  doc.text("Blank Printable Appraisal",W-m,23,{align:"right"});
+
+  // Section 1: Appraisal / Equipment Information
+  let top=39;
+  let y=sectionBox("Appraisal / Equipment Information",top,112);
+  const gap=10,cw=(fullW-gap*2)/3;
+  const x1=m+7,x2=m+7+cw+gap,x3=m+7+(cw+gap)*2;
+  const innerW=cw-7;
+
+  lineField("Date:",x1,y,innerW); lineField("Stock Number:",x2,y,innerW); lineField("Desc. Code:",x3,y,innerW); y+=18;
+  lineField("Location:",x1,y,innerW); lineField("Sales Initials:",x2,y,innerW); lineField("Asking Price $:",x3,y,innerW); y+=18;
+  lineField("Make:",x1,y,innerW); lineField("Model:",x2,y,innerW); lineField("Year:",x3,y,innerW); y+=18;
+  lineField("Size:",x1,y,innerW); lineField("Full Serial Number:",x2,y,cw*2+gap-7); y+=18;
+
+  doc.setFont("helvetica","bold"); doc.setFontSize(6.8); doc.text("Purchased:",x1,y);
+  doc.setFont("helvetica","normal");
+  doc.rect(x1+45,y-7,7,7); doc.text("New",x1+56,y);
+  doc.rect(x1+85,y-7,7,7); doc.text("Used",x1+96,y);
+  lineField("Trade Range %:",x2,y,innerW); lineField("Unit Traded In On:",x3,y,innerW);
+
+  // Section 2: Ownership / Condition
+  top=159;
+  y=sectionBox("Ownership / Condition / Reconditioning",top,118);
+
+  lineField("Owner's Full Name:",x1,y,cw*2+gap-7); lineField("Previous Owner Phone:",x3,y,innerW); y+=18;
+
+  doc.setFont("helvetica","bold"); doc.setFontSize(6.8);
+  doc.text("OK to contact previous owner:",x1,y);
+  doc.setFont("helvetica","normal");
+  doc.rect(x1+108,y-7,7,7); doc.text("Yes",x1+119,y);
+  doc.rect(x1+147,y-7,7,7); doc.text("No",x1+158,y);
+  y+=18;
+
+  lineField("General Appearance:",x1,y,innerW); lineField("Paint Appearance:",x2,y,innerW); lineField("Mechanical Condition:",x3,y,innerW); y+=18;
+  lineField("Engine / Unit Hours:",x1,y,innerW); lineField("Date Hours Taken:",x2,y,innerW); lineField("Recon Allowance $:",x3,y,innerW); y+=18;
+
+  doc.setFont("helvetica","bold"); doc.text("Reconditioning Plan:",x1,y); y+=7;
+  doc.setLineWidth(.35); doc.line(x1,y,W-m-7,y); y+=13;
+  doc.line(x1,y,W-m-7,y);
+
+  // Section 3: Options
+  top=285;
+  const notesTop=654;
+  const optionHeight=notesTop-top-8;
+  y=sectionBox("Equipment-Specific Options",top,optionHeight);
+
+  const optionBottom=top+optionHeight-8;
+  const cols=3,cgap=10,colW=(fullW-14-cgap*2)/3;
+  let col=0,ox=m+7,oy=y;
+
+  // Estimate and choose readable size while preserving one page.
+  let itemCount=0;
+  current.rows.forEach(r=>itemCount += 1 + r.options.length);
+  let fs=5.7,lead=7.1;
+  if(itemCount>100){fs=5.2;lead=6.4}
+  if(itemCount>135){fs=4.8;lead=5.8}
+  if(itemCount>170){fs=4.4;lead=5.3}
+
+  function nextCol(){ col++; ox=m+7+col*(colW+cgap); oy=y; }
+
+  current.rows.forEach(r=>{
+    doc.setFontSize(fs);
+    doc.setFont("helvetica","bold");
+    const labelLines=doc.splitTextToSize(r.label+":",colW);
+
+    const optionLines=[];
+    let cur=[];
+    r.options.forEach(opt=>{
+      const test=(cur.length?cur.join("   ")+"   ":"")+"[] "+opt;
+      if(doc.getTextWidth(test)>colW && cur.length){
+        optionLines.push(cur); cur=[opt];
+      } else cur.push(opt);
+    });
+    if(cur.length) optionLines.push(cur);
+
+    const need = labelLines.length*lead + optionLines.length*lead + 7;
+    if(oy+need > optionBottom && col<cols-1) nextCol();
+
+    doc.setFont("helvetica","bold");
+    doc.text(labelLines,ox,oy);
+    oy += labelLines.length*lead + 1;
+
+    doc.setFont("helvetica","normal");
+    optionLines.forEach(arr=>{
+      let tx=ox;
+      arr.forEach(opt=>{
+        const box=Math.max(4,fs-0.3);
+        doc.rect(tx,oy-box+1,box,box);
+        tx += box+3;
+        doc.text(opt,tx,oy);
+        tx += doc.getTextWidth(opt)+9;
+      });
+      oy += lead;
+    });
+    oy += 5;
+  });
+
+  // Vertical separators between option columns for easier scanning.
+  doc.setLineWidth(.25);
+  const sep1=m+7+colW+cgap/2;
+  const sep2=m+7+(colW+cgap)*2-cgap/2;
+  doc.line(sep1,top+20,sep1,top+optionHeight-7);
+  doc.line(sep2,top+20,sep2,top+optionHeight-7);
+
+  // Section 4: Notes
+  top=654;
+  y=sectionBox("Descriptions / Notes",top,113);
+  doc.setFont("helvetica","bold"); doc.setFontSize(6.7);
+
+  doc.text("Internal Description / Specs:",m+7,y); y+=7;
+  doc.line(m+7,y,W-m-7,y); y+=14;
+  doc.line(m+7,y,W-m-7,y); y+=16;
+
+  doc.text("Base and Options:",m+7,y); y+=7;
+  doc.line(m+7,y,W-m-7,y); y+=14;
+  doc.line(m+7,y,W-m-7,y); y+=16;
+
+  doc.text("Memo:",m+7,y); y+=7;
+  doc.line(m+7,y,W-m-7,y); y+=14;
+  doc.line(m+7,y,W-m-7,y);
+
+  doc.setFont("helvetica","normal");
+  doc.setFontSize(5.5);
+  doc.text("Arnold Companies - Equipment Appraisal",m,H-9);
+  doc.text("Blank one-page form",W-m,H-9,{align:"right"});
+  return doc;
+}
+
+async function blankPdf(){
+  const doc=buildBlankPdf(); if(!doc) return;
+  const safe=(current.title+" - Blank Appraisal.pdf").replace(/[\\/:*?"<>|]+/g,"-");
+  const blob=doc.output("blob");
+  const file=new File([blob],safe,{type:"application/pdf"});
+  const isiOS=/iPad|iPhone|iPod/.test(navigator.userAgent);
+
+  if(isiOS && navigator.share && (!navigator.canShare || navigator.canShare({files:[file]}))){
+    try{ await navigator.share({title:safe,files:[file]}); return; }
+    catch(e){ if(e && e.name==="AbortError") return; }
+  }
+  doc.save(safe);
 }
 
 async function emailPdf(){
