@@ -71,6 +71,74 @@ button.action.light:hover{border-color:var(--arnolds-red)!important}
   .specinput input{width:100%;max-width:120px}
 }
 
+
+.draftbar{
+  display:flex;
+  align-items:center;
+  justify-content:space-between;
+  gap:12px;
+  flex-wrap:wrap;
+  padding:10px 12px;
+  margin:10px 0 14px;
+  border:1px solid #d9d9d9;
+  border-left:4px solid var(--arnolds-red);
+  border-radius:8px;
+  background:#fafafa;
+}
+.draftstatus{
+  font-size:13px;
+  color:#555;
+}
+.draftstatus strong{color:#1f1f1f}
+.draftactions{display:flex;gap:8px;flex-wrap:wrap}
+.draftbtn{
+  border:1px solid #c8c8c8;
+  background:#fff;
+  color:#1f1f1f;
+  border-radius:7px;
+  padding:7px 11px;
+  font:inherit;
+  font-size:13px;
+  cursor:pointer;
+}
+.draftbtn:hover{border-color:var(--arnolds-red)}
+@media(max-width:700px){
+  .draftbar{align-items:flex-start}
+  .draftactions{width:100%}
+  .draftbtn{flex:1}
+}
+
+
+.savedDraftsPanel{
+  margin:0 0 18px;
+  padding:14px;
+  border:1px solid #d9d9d9;
+  border-left:4px solid var(--arnolds-red);
+  border-radius:10px;
+  background:#fff;
+}
+.savedDraftsPanel h2{margin:0 0 10px;font-size:18px}
+.savedDraftList{display:grid;gap:9px}
+.savedDraftItem{
+  display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:10px 12px;border:1px solid #e1e1e1;border-radius:8px;background:#fafafa;
+}
+.savedDraftInfo{min-width:0}
+.savedDraftTitle{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.savedDraftMeta{font-size:12px;color:#666;margin-top:2px}
+.savedDraftControls{display:flex;gap:7px;flex-shrink:0}
+.savedDraftResume,.savedDraftDelete{
+  border-radius:7px;padding:7px 10px;font:inherit;font-size:13px;cursor:pointer
+}
+.savedDraftResume{background:var(--arnolds-red);color:#fff;border:1px solid var(--arnolds-red)}
+.savedDraftDelete{background:#fff;color:#333;border:1px solid #c8c8c8}
+.noDrafts{font-size:13px;color:#777}
+@media(max-width:700px){
+  .savedDraftItem{align-items:flex-start;flex-direction:column}
+  .savedDraftControls{width:100%}
+  .savedDraftResume,.savedDraftDelete{flex:1}
+}
+
 </style>
 <script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.2/dist/jspdf.umd.min.js"></script>
 </head>
@@ -82,7 +150,8 @@ button.action.light:hover{border-color:var(--arnolds-red)!important}
     <div class="brandsub">Arnold Companies</div>
   </div>
 </div><div class="shell">
-<div id="home">
+<div id="home"><div id="savedDraftsHost"></div>
+
  <div class="top"><h1>Arnold Companies – Equipment Appraisals</h1><div class="muted">Choose an appraisal, complete it on your phone, then email, text/copy, or save a PDF.</div><input id="search" class="search" placeholder="Search appraisals…" oninput="renderTiles()"></div>
  <div id="filters" class="filters"></div><div id="tiles" class="grid"></div>
 </div>
@@ -196,6 +265,269 @@ function checkboxOptions(r){
   return opts;
 }
 
+
+const DRAFT_PREFIX="arnolds_appraisal_draft_v1_";
+let draftTimer=null;
+
+function draftKey(){
+  if(!current) return null;
+  return DRAFT_PREFIX + encodeURIComponent(current.title);
+}
+
+
+function getSavedDrafts(){
+  const drafts=[];
+  try{
+    for(let i=0;i<localStorage.length;i++){
+      const key=localStorage.key(i);
+      if(!key || !key.startsWith(DRAFT_PREFIX)) continue;
+      try{
+        const data=JSON.parse(localStorage.getItem(key));
+        if(!data || !data.title) continue;
+        const formIndex=FORMS.findIndex(f=>f.title===data.title);
+        if(formIndex<0) continue;
+        drafts.push({
+          key,
+          title:data.title,
+          savedAt:data.savedAt||"",
+          formIndex
+        });
+      }catch(e){}
+    }
+  }catch(e){}
+  drafts.sort((a,b)=>String(b.savedAt).localeCompare(String(a.savedAt)));
+  return drafts;
+}
+
+function renderSavedDrafts(){
+  const el=document.getElementById("savedDraftsHost");
+  if(!el) return;
+  const drafts=getSavedDrafts();
+
+  if(!drafts.length){
+    el.innerHTML=`<div class="savedDraftsPanel">
+      <h2>Saved Drafts</h2>
+      <div class="noDrafts">No saved appraisal drafts on this device.</div>
+    </div>`;
+    return;
+  }
+
+  el.innerHTML=`<div class="savedDraftsPanel">
+    <h2>Saved Drafts</h2>
+    <div class="savedDraftList">
+      ${drafts.map(d=>{
+        let when="Saved";
+        if(d.savedAt){
+          try{
+            when=new Date(d.savedAt).toLocaleString([],{
+              month:"short",day:"numeric",hour:"numeric",minute:"2-digit"
+            });
+          }catch(e){}
+        }
+        return `<div class="savedDraftItem">
+          <div class="savedDraftInfo">
+            <div class="savedDraftTitle">${esc(d.title)}</div>
+            <div class="savedDraftMeta">Last saved ${esc(when)}</div>
+          </div>
+          <div class="savedDraftControls">
+            <button type="button" class="savedDraftResume" onclick="resumeDraft(${d.formIndex});return false;">Resume</button>
+            <button type="button" class="savedDraftDelete" onclick="deleteDraftFromHome('${encodeURIComponent(d.title)}');return false;">Delete</button>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>
+  </div>`;
+}
+
+function resumeDraft(formIndex){
+  openForm(formIndex);
+}
+
+function deleteDraftFromHome(encodedTitle){
+  const title=decodeURIComponent(encodedTitle);
+  const key=DRAFT_PREFIX+encodeURIComponent(title);
+  if(!confirm("Delete the saved draft for "+title+"?")) return;
+  try{localStorage.removeItem(key)}catch(e){}
+  renderSavedDrafts();
+}
+
+function collectDraftData(){
+  if(!current) return null;
+  const data={
+    title:current.title,
+    savedAt:new Date().toISOString(),
+    fields:{},
+    radios:{},
+    checks:[],
+    specInputs:[],
+    notes:[]
+  };
+
+  document.querySelectorAll('#formView input[id], #formView textarea[id], #formView select[id]').forEach(el=>{
+    if(el.type==="radio" || el.type==="checkbox") return;
+    data.fields[el.id]=el.value;
+  });
+
+  document.querySelectorAll('#formView input[type="radio"]:checked').forEach(el=>{
+    if(el.name) data.radios[el.name]=el.value;
+  });
+
+  document.querySelectorAll('#formView input[type="checkbox"][data-row]:checked').forEach(el=>{
+    data.checks.push({
+      row:el.dataset.row,
+      option:el.dataset.option || "",
+      value:el.value
+    });
+  });
+
+  document.querySelectorAll('#formView .spec-input[data-row]').forEach(el=>{
+    data.specInputs.push({
+      row:el.dataset.row,
+      key:el.dataset.input || "",
+      value:el.value
+    });
+  });
+
+  document.querySelectorAll('#formView [data-note]').forEach(el=>{
+    data.notes.push({
+      row:el.dataset.note,
+      value:el.value
+    });
+  });
+
+  return data;
+}
+
+function saveDraft(evtOrShow=true,maybeShow){
+  let showStatus=true;
+  if(evtOrShow && typeof evtOrShow==="object" && typeof evtOrShow.preventDefault==="function"){
+    evtOrShow.preventDefault();
+    evtOrShow.stopPropagation();
+    showStatus = maybeShow===undefined ? true : maybeShow;
+  }else{
+    showStatus = evtOrShow===undefined ? true : !!evtOrShow;
+  }
+  const key=draftKey();
+  if(!key) return;
+  try{
+    const data=collectDraftData();
+    if(!data) throw new Error("No appraisal data collected");
+    localStorage.setItem(key,JSON.stringify(data));
+    updateDraftStatus(data.savedAt,showStatus ? "Draft saved" : "Auto-saved");
+    if(showStatus) setTimeout(()=>updateDraftStatus(data.savedAt,"Saved"),900);
+    return false;
+  }catch(e){
+    console.warn("Draft save failed",e);
+    updateDraftStatus(null,"Draft could not be saved");
+    return false;
+  }
+}
+
+function scheduleDraftSave(){
+  clearTimeout(draftTimer);
+  draftTimer=setTimeout(()=>saveDraft(false),350);
+}
+
+function updateDraftStatus(iso,label){
+  const el=document.getElementById("draftStatus");
+  if(!el) return;
+  if(!iso){
+    el.innerHTML=`<strong>${label||"No draft saved"}</strong>`;
+    return;
+  }
+  const d=new Date(iso);
+  const time=d.toLocaleString([],{
+    month:"short",day:"numeric",hour:"numeric",minute:"2-digit"
+  });
+  el.innerHTML=`<strong>${label||"Saved"}</strong> · ${time}`;
+}
+
+function restoreDraft(){
+  const key=draftKey();
+  if(!key) return false;
+
+  let raw;
+  try{ raw=localStorage.getItem(key); }catch(e){ return false; }
+  if(!raw) return false;
+
+  let data;
+  try{ data=JSON.parse(raw); }catch(e){ return false; }
+  if(!data || data.title!==current.title) return false;
+
+  const root=document.getElementById("formView");
+  if(!root) return false;
+
+  Object.entries(data.fields||{}).forEach(([id,val])=>{
+    const el=root.querySelector(`[id="${id}"]`);
+    if(el) el.value=val;
+  });
+
+  Object.entries(data.radios||{}).forEach(([name,val])=>{
+    root.querySelectorAll('input[type="radio"]').forEach(el=>{
+      if(el.name===name && el.value===val) el.checked=true;
+    });
+  });
+
+  (data.checks||[]).forEach(item=>{
+    root.querySelectorAll('input[type="checkbox"][data-row]').forEach(el=>{
+      if(String(el.dataset.row)===String(item.row) && String(el.value)===String(item.value)){
+        el.checked=true;
+      }
+    });
+  });
+
+  (data.specInputs||[]).forEach(item=>{
+    root.querySelectorAll('.spec-input[data-row]').forEach(el=>{
+      if(String(el.dataset.row)===String(item.row) && String(el.dataset.input||"")===String(item.key||"")){
+        el.value=item.value;
+      }
+    });
+  });
+
+  (data.notes||[]).forEach(item=>{
+    root.querySelectorAll('[data-note]').forEach(el=>{
+      if(String(el.dataset.note)===String(item.row)) el.value=item.value;
+    });
+  });
+
+  updateDraftStatus(data.savedAt,"Draft restored");
+  return true;
+}
+
+function clearDraft(){
+  const key=draftKey();
+  if(!key) return;
+  const hasDraft=localStorage.getItem(key);
+  const hasAnyValue=Array.from(document.querySelectorAll('#formView input, #formView textarea, #formView select'))
+    .some(el=>{
+      if(el.type==="checkbox"||el.type==="radio") return el.checked;
+      return el.value && el.value.trim()!=="";
+    });
+
+  if((hasDraft||hasAnyValue) && !confirm("Clear this saved draft and all values currently entered on this appraisal?")){
+    return;
+  }
+
+  try{ localStorage.removeItem(key); }catch(e){}
+  document.querySelectorAll('#formView input, #formView textarea, #formView select').forEach(el=>{
+    if(el.type==="checkbox"||el.type==="radio") el.checked=false;
+    else if(el.tagName==="SELECT") el.selectedIndex=0;
+    else el.value="";
+  });
+  updateDraftStatus(null,"Draft cleared");
+}
+
+function bindDraftAutosave(){
+  const form=document.getElementById("formView");
+  if(!form) return;
+
+  if(form.dataset.draftBound==="1") return;
+  form.dataset.draftBound="1";
+
+  form.addEventListener("input",scheduleDraftSave);
+  form.addEventListener("change",scheduleDraftSave);
+}
+
 function openForm(i){current=FORMS[i];home.style.display="none";formView.style.display="block";
  let specs=current.rows.map((r,j)=>{
    const inputs=inputDefinitions(r);
@@ -206,7 +538,14 @@ function openForm(i){current=FORMS[i];home.style.display="none";formView.style.d
  }).join("");
  formView.innerHTML=`<button class="back" onclick="goHome()">← All Appraisals</button>
  <div class="top"><h1>${esc(current.title)}</h1><div class="muted">${esc(current.category)} • Based on ${esc(current.file)}</div></div>
- <div class="card"><h2>Appraisal Information</h2><div class="fields">
+ <div class="card"><h2>Appraisal Information</h2><div class="draftbar">
+  <div class="draftstatus" id="draftStatus"><strong>No draft saved</strong></div>
+  <div class="draftactions">
+    <button type="button" class="draftbtn" onclick="saveDraft(event,true);return false;">Save Draft</button>
+    <button type="button" class="draftbtn" onclick="clearDraft()">Clear Draft</button>
+  </div>
+</div>
+<div class="fields">
  ${field("date","Date","date")}${field("stock","Stock Number")}${field("desc","Description Code")}${field("location","Location")}
  ${field("traded","Unit Traded In On")}${field("sales","Sales Initials")}${field("asking","Asking Price $","number")}${field("trade","Trade Range %","number")}
  </div></div>
@@ -224,8 +563,18 @@ function openForm(i){current=FORMS[i];home.style.display="none";formView.style.d
  <div class="actions"><button class="action dark" onclick="emailPdf()">Email PDF</button><button class="action light" onclick="savePdf()">Save PDF</button><button class="action light" onclick="blankPdf()">Blank Printable PDF</button></div>
  <div class="notice">Email PDF and Save PDF use the completed appraisal. Blank Printable PDF creates a clean one-page blank appraisal for printing or handwriting.</div>`;
  window.scrollTo(0,0);
+
+  bindDraftAutosave();
+  restoreDraft();
 }
-function goHome(){formView.style.display="none";home.style.display="block";current=null;window.scrollTo(0,0)}
+function goHome(){
+  if(current) saveDraft(false);
+  formView.style.display="none";
+  home.style.display="block";
+  current=null;
+  renderSavedDrafts();
+  window.scrollTo(0,0);
+}
 function v(id){let e=document.getElementById(id);return e?e.value.trim():""}
 function radio(n){let e=document.querySelector(`input[name="${n}"]:checked`);return e?e.value:""}
 function line(k,x){return x?`${k}: ${x}\n`:""}
@@ -632,6 +981,7 @@ function buildBlankPdf(){
 }
 
 async function blankPdf(){
+  saveDraft(false);
   let doc;
   try{
     doc=buildBlankPdf();
@@ -654,6 +1004,7 @@ async function blankPdf(){
 }
 
 async function emailPdf(){
+  saveDraft(false);
   const doc=buildPdf(); if(!doc) return;
   const blob=doc.output("blob");
   const file=new File([blob],pdfSafeName(),{type:"application/pdf"});
@@ -681,6 +1032,7 @@ async function emailPdf(){
 }
 
 function savePdf(){
+  saveDraft(false);
   const doc=buildPdf(); if(!doc) return;
   const blob=doc.output("blob");
   const file=new File([blob],pdfSafeName(),{type:"application/pdf"});
